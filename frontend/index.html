@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="theme-color"
+        content="#02060f"
+    >
+
+    <title>NL SQL Query Builder</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+
+    <link
+        rel="preconnect"
+        href="https://fonts.gstatic.com"
+        crossorigin
+    >
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Sora:wght@100..900&display=swap"
+        rel="stylesheet"
+    >
+
+    <link
+        rel="stylesheet"
+        href="style.css"
+    >
+
+</head>
+
+
+<body>
+
+
+    <!-- ==========================================
+         BACKGROUND VIDEO
+    =========================================== -->
+
+    <video
+        class="art"
+        autoplay
+        muted
+        loop
+        playsinline
+        preload="auto"
+        aria-hidden="true"
+        poster="https://d2ol7oe51mr4n9.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/130837c4-0244-4f37-9c61-8d801d93fd29.jpg"
+    >
+
+        <source
+            src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260912_104303_0c6d60b2-9353-408e-9449-585108a22fb5.mp4"
+            type="video/mp4"
+        >
+
+    </video>
+
+
+    <!-- ==========================================
+         DARK OVERLAY
+    =========================================== -->
+
+    <div class="veil"></div>
+
+
+    <!-- ==========================================
+         MAIN APPLICATION
+    =========================================== -->
+
+    <main class="container">
+
+
+        <!-- HERO -->
+
+        <header class="hero">
+
+            <div class="badge">
+                AI DATABASE ASSISTANT
+            </div>
+
+
+            <h1>
+
+                Natural Language
+
+                <span>
+                    → SQL
+                </span>
+
+            </h1>
+
+
+            <p>
+                Ask questions about your database in plain English.
+                Let AI generate and execute the SQL for you.
+            </p>
+
+        </header>
+
+
+
+        <!-- ======================================
+             QUERY CARD
+        ======================================= -->
+
+        <section class="query-card">
+
+
+            <div class="card-header">
+
+
+                <div>
+
+                    <h2>
+                        Ask your database
+                    </h2>
+
+                    <p>
+                        Describe what you want to find.
+                    </p>
+
+                </div>
+
+
+                <div class="status">
+
+                    <span class="status-dot"></span>
+
+                    AI Ready
+
+                </div>
+
+
+            </div>
+
+
+
+            <!-- INPUT -->
+
+            <div class="input-area">
+
+
+                <textarea
+                    id="question"
+                    rows="4"
+                    placeholder="Example: Show employees with salary greater than 50000"
+                ></textarea>
+
+
+
+                <div class="input-footer">
+
+
+                    <span class="hint">
+                        Natural language supported
+                    </span>
+
+
+                    <button id="runButton">
+
+                        <span>
+                            Run Query
+                        </span>
+
+                        <span class="arrow">
+                            →
+                        </span>
+
+                    </button>
+
+
+                </div>
+
+
+            </div>
+
+
+        </section>
+
+
+
+        <!-- ======================================
+             OUTPUT
+        ======================================= -->
+
+        <section class="output-grid">
+
+
+            <!-- SQL -->
+
+            <div class="output-card">
+
+
+                <div class="output-title">
+
+
+                    <span class="icon">
+                        ⌘
+                    </span>
+
+
+                    <div>
+
+                        <h3>
+                            Generated SQL
+                        </h3>
+
+                        <p>
+                            Query created by Qwen
+                        </p>
+
+                    </div>
+
+
+                </div>
+
+
+                <pre id="sqlOutput">Your generated SQL will appear here...</pre>
+
+
+            </div>
+
+
+
+            <!-- RESULTS -->
+
+            <div class="output-card">
+
+
+                <div class="output-title">
+
+
+                    <span class="icon">
+                        ▦
+                    </span>
+
+
+                    <div>
+
+                        <h3>
+                            Query Results
+                        </h3>
+
+                        <p>
+                            Data returned from SQLite
+                        </p>
+
+                    </div>
+
+
+                </div>
+
+
+                <div id="results">
+                    Your results will appear here...
+                </div>
+
+
+            </div>
+
+
+        </section>
+
+
+
+        <!-- ======================================
+             FOOTER
+        ======================================= -->
+
+        <footer>
+
+            <span>
+                NL → SQL Query Builder
+            </span>
+
+            <span>
+                FastAPI · Qwen · SQLite
+            </span>
+
+        </footer>
+
+
+    </main>
+
+
+
+    <script src="script.js"></script>
+
+
+
+    <!-- ==========================================
+         VIDEO CONTROL
+    =========================================== -->
+
+    <script>
+
+        const video = document.querySelector(".art");
+
+
+        /*
+         * Make absolutely sure the video is muted.
+         * Muted video is required for autoplay.
+         */
+
+        video.muted = true;
+        video.volume = 0;
+
+
+        /*
+         * Start video
+         */
+
+        function startVideo() {
+
+            video.play()
+                .then(() => {
+
+                    console.log("Background video playing");
+
+                })
+                .catch((error) => {
+
+                    console.log(
+                        "Autoplay was blocked:",
+                        error
+                    );
+
+                });
+
+        }
+
+
+        /*
+         * Try immediately
+         */
+
+        startVideo();
+
+
+        /*
+         * Try when video becomes available
+         */
+
+        video.addEventListener(
+            "loadeddata",
+            startVideo
+        );
+
+
+        video.addEventListener(
+            "canplay",
+            startVideo
+        );
+
+
+        /*
+         * If browser blocks autoplay,
+         * start it after user interaction.
+         */
+
+        document.addEventListener(
+            "click",
+            startVideo,
+            {
+                once: true
+            }
+        );
+
+
+        document.addEventListener(
+            "mousemove",
+            startVideo,
+            {
+                once: true
+            }
+        );
+
+
+        document.addEventListener(
+            "touchstart",
+            startVideo,
+            {
+                once: true
+            }
+        );
+
+
+        /*
+         * Reduced motion
+         */
+
+        const motionQuery =
+            window.matchMedia(
+                "(prefers-reduced-motion: reduce)"
+            );
+
+
+        function checkMotion() {
+
+            if (motionQuery.matches) {
+
+                video.pause();
+
+            } else {
+
+                startVideo();
+
+            }
+
+        }
+
+
+        checkMotion();
+
+
+        if (motionQuery.addEventListener) {
+
+            motionQuery.addEventListener(
+                "change",
+                checkMotion
+            );
+
+        }
+
+    </script>
+
+
+</body>
+
+</html>

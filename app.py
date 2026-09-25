@@ -1,12 +1,26 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import requests
+from groq import Groq
+import os
 import sqlite3
-import re
 
 
 app = FastAPI()
+
+
+# ==========================================
+# GROQ CLIENT
+# ==========================================
+
+api_key = os.environ.get("GROQ_API_KEY")
+
+if not api_key:
+    raise RuntimeError("GROQ_API_KEY environment variable is not set.")
+
+client = Groq(
+    api_key=api_key
+)
 
 
 # ==========================================
@@ -27,7 +41,6 @@ app.add_middleware(
 # ==========================================
 
 class QueryRequest(BaseModel):
-
     question: str
 
 
@@ -37,207 +50,198 @@ class QueryRequest(BaseModel):
 
 @app.get("/")
 def home():
-
     return {
-        "message": "NL → SQL Query Builder API is running"
+        "message": "NL SQL Query Builder API is running"
     }
 
 
 # ==========================================
-# GET DATABASE SCHEMA
+# QUERY ENDPOINT
 # ==========================================
 
-def get_database_schema(cursor):
+@app.post("/query")
+def query(request: QueryRequest):
+
+    connection = sqlite3.connect("database.db")
+    cursor = connection.cursor()
+
+
+    # ==========================================
+    # GET DATABASE TABLES
+    # ==========================================
 
     cursor.execute("""
         SELECT name
         FROM sqlite_master
-        WHERE type = 'table'
-        AND name NOT LIKE 'sqlite_%'
+        WHERE type='table'
     """)
 
     tables = cursor.fetchall()
 
+
+    # Store allowed table names
+    allowed_tables = []
+
+    for table in tables:
+        allowed_tables.append(table[0].upper())
+
+
+    print("Allowed tables:", allowed_tables)
+
+
+    # ==========================================
+    # BUILD DATABASE SCHEMA
+    # ==========================================
+
     schema_parts = []
-
-    allowed_tables = {}
-
 
     for table in tables:
 
         table_name = table[0]
 
-
         cursor.execute(
-            f'PRAGMA table_info("{table_name}")'
+            f"PRAGMA table_info({table_name})"
         )
 
         columns = cursor.fetchall()
 
-
         column_names = []
 
-
         for column in columns:
+            column_names.append(column[1])
 
-            column_names.append(
-                column[1]
-            )
-
-
-        allowed_tables[
-            table_name.upper()
-        ] = [
-            column.upper()
-            for column in column_names
-        ]
-
-
-        schema_parts.append(
+        table_schema = (
             f"Table: {table_name}\n"
             f"Columns: {', '.join(column_names)}"
         )
 
-
-    schema = "\n\n".join(
-        schema_parts
-    )
+        schema_parts.append(table_schema)
 
 
-    return schema, allowed_tables
+    schema = "\n\n".join(schema_parts)
+
+    print("Schema:")
+    print(schema)
 
 
-# ==========================================
-# EXTRACT TABLES FROM SQL
-# ==========================================
+    # ==========================================
+    # SEND QUESTION TO GROQ
+    # ==========================================
 
-def extract_tables(sql):
+    try:
 
-    tables = []
+        response = client.chat.completions.create(
 
+            model="openai/gpt-oss-20b",
 
-    patterns = [
+            messages=[
+                {
+                    "role": "system",
 
-        r"\bFROM\s+([A-Za-z_][A-Za-z0-9_]*)",
+                    "content": f"""
+You are a SQL assistant.
 
-        r"\bJOIN\s+([A-Za-z_][A-Za-z0-9_]*)"
+Here is the actual database schema:
 
-    ]
+{schema}
 
+Convert the user's request into a SQL SELECT query.
 
-    for pattern in patterns:
+Rules:
 
-        matches = re.findall(
-            pattern,
-            sql,
-            re.IGNORECASE
+- Only generate SELECT queries.
+- You may use JOIN when the user's request requires data from multiple tables.
+- Use only tables and columns that exist in the schema.
+- Do not create tables.
+- Do not modify the database.
+- Return only the SQL query.
+"""
+                },
+
+                {
+                    "role": "user",
+
+                    "content": request.question
+                }
+            ]
         )
 
+    except Exception as error:
 
-        for table in matches:
+        connection.close()
 
-            table_upper = table.upper()
+        print("Groq error:", error)
 
-
-            if table_upper not in tables:
-
-                tables.append(
-                    table_upper
-                )
+        return {
+            "error": "AI service is unavailable."
+        }
 
 
-    return tables
+    # ==========================================
+    # GET GROQ RESPONSE
+    # ==========================================
+
+    ai_response = response.choices[0].message.content
+
+    print("AI response:")
+    print(ai_response)
 
 
-# ==========================================
-# VALIDATE TABLES
-# ==========================================
+    # ==========================================
+    # EXTRACT SQL
+    # ==========================================
 
-def validate_tables(sql, allowed_tables):
+    if "```sql" in ai_response:
 
-    tables_used = extract_tables(sql)
-
-
-    if not tables_used:
-
-        return (
-            False,
-            "No valid table was found in the generated SQL."
+        sql = (
+            ai_response
+            .split("```sql")[1]
+            .split("```")[0]
+            .strip()
         )
 
+    elif "```" in ai_response:
 
-    for table in tables_used:
+        sql = (
+            ai_response
+            .split("```")[1]
+            .strip()
+        )
 
-        if table not in allowed_tables:
+    else:
 
-            return (
-                False,
-                f"Table '{table}' does not exist in the database."
-            )
-
-
-    return True, ""
+        sql = ai_response.strip()
 
 
-# ==========================================
-# VALIDATE SQL
-# ==========================================
+    print("Generated SQL:")
+    print(sql)
 
-def validate_sql(sql, allowed_tables):
+
+    # ==========================================
+    # SQL VALIDATION
+    # ==========================================
 
     sql_upper = sql.upper().strip()
 
 
-    # --------------------------------------
-    # SELECT ONLY
-    # --------------------------------------
+    # ------------------------------------------
+    # 1. SELECT ONLY
+    # ------------------------------------------
 
     if not sql_upper.startswith("SELECT"):
 
-        return (
-            False,
-            "Only SELECT queries are allowed."
-        )
+        connection.close()
+
+        return {
+            "error": "Only SELECT queries are allowed."
+        }
 
 
-    # --------------------------------------
-    # MULTIPLE STATEMENTS
-    # --------------------------------------
-
-    if ";" in sql_upper[:-1]:
-
-        return (
-            False,
-            "Multiple SQL statements are not allowed."
-        )
-
-
-    # --------------------------------------
-    # SQL COMMENTS
-    # --------------------------------------
-
-    if "--" in sql_upper:
-
-        return (
-            False,
-            "SQL comments are not allowed."
-        )
-
-
-    if "/*" in sql_upper or "*/" in sql_upper:
-
-        return (
-            False,
-            "SQL comments are not allowed."
-        )
-
-
-    # --------------------------------------
-    # DANGEROUS SQL OPERATIONS
-    # --------------------------------------
+    # ------------------------------------------
+    # 2. BLOCK DANGEROUS SQL OPERATIONS
+    # ------------------------------------------
 
     dangerous_keywords = [
-
         "INSERT",
         "UPDATE",
         "DELETE",
@@ -248,321 +252,115 @@ def validate_sql(sql, allowed_tables):
         "ATTACH",
         "DETACH",
         "PRAGMA"
-
     ]
 
 
     for keyword in dangerous_keywords:
 
-        pattern = rf"\b{keyword}\b"
+        if keyword in sql_upper:
+
+            connection.close()
+
+            return {
+                "error": f"Blocked dangerous SQL operation: {keyword}"
+            }
 
 
-        if re.search(
-            pattern,
-            sql_upper
-        ):
+    # ------------------------------------------
+    # 3. BLOCK MULTIPLE SQL STATEMENTS
+    # ------------------------------------------
 
-            return (
-                False,
-                f"Blocked dangerous SQL operation: {keyword}"
-            )
+    if ";" in sql_upper[:-1]:
 
-
-    # --------------------------------------
-    # TABLE VALIDATION
-    # --------------------------------------
-
-    valid, error_message = validate_tables(
-        sql,
-        allowed_tables
-    )
-
-
-    if not valid:
-
-        return (
-            False,
-            error_message
-        )
-
-
-    return True, ""
-
-
-# ==========================================
-# QUERY ENDPOINT
-# ==========================================
-
-@app.post("/query")
-def query(request: QueryRequest):
-
-    question = request.question.strip()
-
-
-    # --------------------------------------
-    # EMPTY QUESTION
-    # --------------------------------------
-
-    if not question:
+        connection.close()
 
         return {
-            "error": "Please enter a question."
+            "error": "Multiple SQL statements are not allowed."
         }
 
 
-    # --------------------------------------
-    # CONNECT DATABASE
-    # --------------------------------------
+    # ------------------------------------------
+    # 4. BLOCK SQL COMMENTS
+    # ------------------------------------------
 
-    connection = sqlite3.connect(
-        "database.db"
-    )
+    if (
+        "--" in sql_upper
+        or "/*" in sql_upper
+        or "*/" in sql_upper
+    ):
 
-    cursor = connection.cursor()
+        connection.close()
 
+        return {
+            "error": "SQL comments are not allowed."
+        }
+
+
+    # ------------------------------------------
+    # 5. CHECK THAT A KNOWN TABLE IS USED
+    # ------------------------------------------
+
+    table_found = False
+
+    for table in allowed_tables:
+
+        if f"FROM {table}" in sql_upper:
+
+            table_found = True
+
+            break
+
+
+    if not table_found:
+
+        connection.close()
+
+        return {
+            "error": "SQL query uses an unknown table."
+        }
+
+
+    # ==========================================
+    # EXECUTE SQL
+    # ==========================================
 
     try:
 
-        # ==================================
-        # GET DATABASE SCHEMA
-        # ==================================
+        cursor.execute(sql)
 
-        schema, allowed_tables = (
-            get_database_schema(cursor)
-        )
+        rows = cursor.fetchall()
 
 
-        print("\n==============================")
+        # Get actual column names
+        columns = []
 
-        print("DATABASE SCHEMA")
+        for column in cursor.description:
 
-        print("==============================")
+            columns.append(column[0])
 
-        print(schema)
 
+    except Exception as error:
 
-        # ==================================
-        # SEND QUESTION TO QWEN
-        # ==================================
-
-        try:
-
-            response = requests.post(
-
-                "http://localhost:11434/api/generate",
-
-                json={
-
-                    "model": "qwen2.5:7b",
-
-                    "prompt": f"""
-You are an expert SQLite SQL query generator.
-
-Your job is to convert the user's natural-language
-question into ONE SQL SELECT query.
-
-DATABASE SCHEMA:
-
-{schema}
-
-RULES:
-
-1. Return ONLY the SQL query.
-2. Do not return explanations.
-3. Do not return Markdown.
-4. Only generate SELECT queries.
-5. Never generate INSERT.
-6. Never generate UPDATE.
-7. Never generate DELETE.
-8. Never generate DROP.
-9. Never generate ALTER.
-10. Never generate CREATE.
-11. Never generate PRAGMA.
-12. Use SQLite syntax.
-13. Use only tables and columns shown in the schema.
-14. Use JOIN when multiple tables are required.
-15. Use GROUP BY for grouped calculations.
-16. Use ORDER BY when sorting is requested.
-17. Use LIMIT when the user asks for the highest,
-    lowest, first, last, top, or a limited number of rows.
-18. Do not invent tables.
-19. Do not invent columns.
-20. Return exactly one SQL query.
-
-USER QUESTION:
-
-{question}
-
-Return ONLY the SQL query.
-""",
-
-                    "stream": False
-
-                },
-
-                timeout=120
-            )
-
-
-        except requests.exceptions.RequestException:
-
-            return {
-                "error":
-                    "AI service is unavailable. "
-                    "Make sure Ollama is running."
-            }
-
-
-        # ==================================
-        # OLLAMA RESPONSE CHECK
-        # ==================================
-
-        if response.status_code != 200:
-
-            return {
-                "error":
-                    "Qwen returned an error."
-            }
-
-
-        ai_data = response.json()
-
-
-        ai_response = ai_data.get(
-            "response",
-            ""
-        ).strip()
-
-
-        if not ai_response:
-
-            return {
-                "error":
-                    "Qwen did not generate a SQL query."
-            }
-
-
-        print("\n==============================")
-
-        print("QWEN RESPONSE")
-
-        print("==============================")
-
-        print(ai_response)
-
-
-        # ==================================
-        # EXTRACT SQL
-        # ==================================
-
-        if "```sql" in ai_response.lower():
-
-            sql = re.split(
-                r"```sql",
-                ai_response,
-                flags=re.IGNORECASE
-            )[1]
-
-            sql = sql.split(
-                "```"
-            )[0].strip()
-
-
-        elif "```" in ai_response:
-
-            sql = ai_response.split(
-                "```"
-            )[1].strip()
-
-
-        else:
-
-            sql = ai_response.strip()
-
-
-        # Remove final semicolon
-        sql = sql.rstrip(";").strip()
-
-
-        print("\n==============================")
-
-        print("GENERATED SQL")
-
-        print("==============================")
-
-        print(sql)
-
-
-        # ==================================
-        # VALIDATE SQL
-        # ==================================
-
-        valid, error_message = validate_sql(
-            sql,
-            allowed_tables
-        )
-
-
-        if not valid:
-
-            return {
-                "error": error_message,
-                "sql": sql
-            }
-
-
-        # ==================================
-        # EXECUTE SQL
-        # ==================================
-
-        try:
-
-            cursor.execute(sql)
-
-            rows = cursor.fetchall()
-
-
-            # Get actual column names
-
-            columns = []
-
-
-            if cursor.description:
-
-                for column in cursor.description:
-
-                    columns.append(
-                        column[0]
-                    )
-
-
-        except sqlite3.Error as error:
-
-            return {
-                "error":
-                    f"SQL execution failed: {error}",
-
-                "sql": sql
-            }
-
-
-        # ==================================
-        # RETURN DATA
-        # ==================================
+        connection.close()
 
         return {
-
-            "question": question,
-
-            "sql": sql,
-
-            "columns": columns,
-
-            "results": rows
-
+            "error": str(error)
         }
 
 
-    finally:
+    # ==========================================
+    # CLOSE DATABASE
+    # ==========================================
 
-        connection.close()
+    connection.close()
+
+
+    # ==========================================
+    # RETURN RESULT TO FRONTEND
+    # ==========================================
+
+    return {
+        "sql": sql,
+        "columns": columns,
+        "results": rows
+    }

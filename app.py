@@ -86,7 +86,6 @@ def query(request: QueryRequest):
         allowed_tables.append(table[0].upper())
 
 
-    print("Allowed tables:", allowed_tables)
 
 
     # ==========================================
@@ -120,8 +119,7 @@ def query(request: QueryRequest):
 
     schema = "\n\n".join(schema_parts)
 
-    print("Schema:")
-    print(schema)
+    
 
 
     # ==========================================
@@ -170,7 +168,6 @@ Rules:
 
         connection.close()
 
-        print("Groq error:", error)
 
         return {
             "error": "AI service is unavailable."
@@ -183,8 +180,7 @@ Rules:
 
     ai_response = response.choices[0].message.content
 
-    print("AI response:")
-    print(ai_response)
+   
 
 
     # ==========================================
@@ -213,8 +209,7 @@ Rules:
         sql = ai_response.strip()
 
 
-    print("Generated SQL:")
-    print(sql)
+   
 
 
     # ==========================================

@@ -1,70 +1,240 @@
+const API_URL = "https://nl-sql-query-builder.onrender.com/query";
+
+
+// ==========================================
+// ELEMENTS
+// ==========================================
+
 const questionInput = document.getElementById("question");
 const runButton = document.getElementById("runButton");
 
 const sqlOutput = document.getElementById("sqlOutput");
-const resultsDiv = document.getElementById("results");
-
-const backgroundVideo =
-    document.getElementById("backgroundVideo");
-
-const hoverCards =
-    document.querySelectorAll(".hover-card");
+const resultsContainer = document.getElementById("results");
 
 
-/* =========================================
-   BACKGROUND VIDEO
-========================================= */
+// ==========================================
+// ESCAPE HTML
+// ==========================================
 
-if (backgroundVideo) {
+function escapeHTML(value) {
 
-    backgroundVideo.play().catch(() => {
+    const div = document.createElement("div");
 
-        console.log(
-            "Video autoplay waiting for browser permission."
-        );
+    div.textContent = value;
 
-    });
-
+    return div.innerHTML;
 }
 
 
-/* =========================================
-   QUERY CARD HOVER
-========================================= */
+// ==========================================
+// RUN QUERY
+// ==========================================
 
-/*
-    IMPORTANT:
+async function runQuery() {
 
-    This only adds a class to the card's
-    parent body.
-
-    There is NO CSS changing the video
-    when this happens.
-
-    Therefore the background stays normal.
-*/
-
-hoverCards.forEach((card) => {
-
-    card.addEventListener("mouseenter", () => {
-
-        card.classList.add("is-hovered");
-
-    });
+    const question = questionInput.value.trim();
 
 
-    card.addEventListener("mouseleave", () => {
+    // ==========================================
+    // CHECK EMPTY QUESTION
+    // ==========================================
 
-        card.classList.remove("is-hovered");
+    if (!question) {
 
-    });
+        resultsContainer.innerHTML =
+            "<p>Please enter a question.</p>";
 
-});
+        return;
+    }
 
 
-/* =========================================
-   RUN QUERY
-========================================= */
+    // ==========================================
+    // LOADING STATE
+    // ==========================================
+
+    runButton.disabled = true;
+
+    runButton.innerHTML = `
+        <span>Running...</span>
+        <span class="arrow">→</span>
+    `;
+
+    sqlOutput.textContent = "Generating SQL...";
+
+    resultsContainer.innerHTML =
+        "<p>Waiting for database results...</p>";
+
+
+    try {
+
+        // ==========================================
+        // SEND REQUEST TO RENDER
+        // ==========================================
+
+        const response = await fetch(API_URL, {
+
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/json"
+            },
+
+            body: JSON.stringify({
+                question: question
+            })
+        });
+
+
+        // ==========================================
+        // GET RESPONSE
+        // ==========================================
+
+        const data = await response.json();
+
+
+        // ==========================================
+        // CHECK API ERROR
+        // ==========================================
+
+        if (!response.ok || data.error) {
+
+            sqlOutput.textContent =
+                "No SQL generated.";
+
+            resultsContainer.innerHTML =
+                `<p>${escapeHTML(
+                    data.error || "Something went wrong."
+                )}</p>`;
+
+            return;
+        }
+
+
+        // ==========================================
+        // SHOW GENERATED SQL
+        // ==========================================
+
+        sqlOutput.textContent = data.sql;
+
+
+        // ==========================================
+        // CHECK RESULTS
+        // ==========================================
+
+        if (!data.results || data.results.length === 0) {
+
+            resultsContainer.innerHTML =
+                "<p>No results found.</p>";
+
+            return;
+        }
+
+
+        // ==========================================
+        // CREATE RESULT TABLE
+        // ==========================================
+
+        let tableHTML = "<table>";
+
+
+        // ==========================================
+        // TABLE HEADER
+        // ==========================================
+
+        tableHTML += "<thead>";
+
+        tableHTML += "<tr>";
+
+
+        for (const column of data.columns) {
+
+            tableHTML += `
+                <th>
+                    ${escapeHTML(column)}
+                </th>
+            `;
+        }
+
+
+        tableHTML += "</tr>";
+
+        tableHTML += "</thead>";
+
+
+        // ==========================================
+        // TABLE BODY
+        // ==========================================
+
+        tableHTML += "<tbody>";
+
+
+        for (const row of data.results) {
+
+            tableHTML += "<tr>";
+
+
+            for (const value of row) {
+
+                tableHTML += `
+                    <td>
+                        ${escapeHTML(value)}
+                    </td>
+                `;
+            }
+
+
+            tableHTML += "</tr>";
+        }
+
+
+        tableHTML += "</tbody>";
+
+        tableHTML += "</table>";
+
+
+        // ==========================================
+        // DISPLAY TABLE
+        // ==========================================
+
+        resultsContainer.innerHTML = tableHTML;
+
+
+    } catch (error) {
+
+        console.error("Frontend error:", error);
+
+
+        sqlOutput.textContent =
+            "Unable to generate SQL.";
+
+
+        resultsContainer.innerHTML = `
+            <p>
+                Unable to connect to the backend.
+                Please try again.
+            </p>
+        `;
+
+
+    } finally {
+
+        // ==========================================
+        // RESTORE BUTTON
+        // ==========================================
+
+        runButton.disabled = false;
+
+        runButton.innerHTML = `
+            <span>Run Query</span>
+            <span class="arrow">→</span>
+        `;
+    }
+}
+
+
+// ==========================================
+// BUTTON CLICK
+// ==========================================
 
 runButton.addEventListener(
     "click",
@@ -72,314 +242,13 @@ runButton.addEventListener(
 );
 
 
-async function runQuery() {
-
-    const question =
-        questionInput.value.trim();
-
-
-    /* =====================================
-       EMPTY QUESTION
-    ====================================== */
-
-    if (question === "") {
-
-        resultsDiv.innerHTML =
-            '<p class="error">Please enter a question.</p>';
-
-        return;
-
-    }
-
-
-    /* =====================================
-       DISABLE BUTTON
-    ====================================== */
-
-    runButton.disabled = true;
-
-
-    runButton.innerHTML = `
-        <span>Generating...</span>
-        <span class="arrow">⟳</span>
-    `;
-
-
-    /* =====================================
-       LOADING
-    ====================================== */
-
-    sqlOutput.textContent =
-        "Qwen is generating SQL...";
-
-
-    resultsDiv.innerHTML =
-        '<p class="loading">Generating SQL and executing query...</p>';
-
-
-    try {
-
-        /* =================================
-           SEND REQUEST TO FASTAPI
-        ================================== */
-
-        const response = await fetch(
-            "http://127.0.0.1:8000/query",
-            {
-                method: "POST",
-
-                headers: {
-                    "Content-Type": "application/json"
-                },
-
-                body: JSON.stringify({
-                    question: question
-                })
-            }
-        );
-
-
-        /* =================================
-           GET JSON RESPONSE
-        ================================== */
-
-        const data =
-            await response.json();
-
-
-        /* =================================
-           BACKEND ERROR
-        ================================== */
-
-        if (data.error) {
-
-            sqlOutput.textContent =
-                "No SQL generated.";
-
-
-            resultsDiv.innerHTML =
-                `<p class="error">${escapeHTML(data.error)}</p>`;
-
-
-            return;
-
-        }
-
-
-        /* =================================
-           DISPLAY SQL
-        ================================== */
-
-        sqlOutput.textContent =
-            data.sql;
-
-
-        /* =================================
-           DISPLAY RESULTS
-        ================================== */
-
-        displayResults(
-            data.columns,
-            data.results
-        );
-
-    }
-
-
-    catch (error) {
-
-        console.error(error);
-
-
-        sqlOutput.textContent =
-            "Request failed.";
-
-
-        resultsDiv.innerHTML =
-            `
-            <p class="error">
-                Could not connect to the FastAPI server.
-            </p>
-            `;
-
-    }
-
-
-    finally {
-
-        /* ================================
-           ENABLE BUTTON
-        ================================= */
-
-        runButton.disabled = false;
-
-
-        runButton.innerHTML = `
-            <span>Run Query</span>
-            <span class="arrow">→</span>
-        `;
-
-    }
-
-}
-
-
-/* =========================================
-   DISPLAY RESULTS
-========================================= */
-
-function displayResults(
-    columns,
-    rows
-) {
-
-    /* =====================================
-       NO RESULTS
-    ====================================== */
-
-    if (
-        !rows ||
-        rows.length === 0
-    ) {
-
-        resultsDiv.innerHTML =
-            "<p class='loading'>No results found.</p>";
-
-        return;
-
-    }
-
-
-    let table = "<table>";
-
-
-    /* =====================================
-       TABLE HEADER
-    ====================================== */
-
-    table += "<thead>";
-
-    table += "<tr>";
-
-
-    for (const column of columns) {
-
-        table += `
-            <th>
-                ${escapeHTML(column)}
-            </th>
-        `;
-
-    }
-
-
-    table += "</tr>";
-
-    table += "</thead>";
-
-
-    /* =====================================
-       TABLE BODY
-    ====================================== */
-
-    table += "<tbody>";
-
-
-    for (const row of rows) {
-
-        table += "<tr>";
-
-
-        for (const value of row) {
-
-            table += `
-                <td>
-                    ${escapeHTML(value)}
-                </td>
-            `;
-
-        }
-
-
-        table += "</tr>";
-
-    }
-
-
-    table += "</tbody>";
-
-    table += "</table>";
-
-
-    /* =====================================
-       INSERT TABLE
-    ====================================== */
-
-    resultsDiv.innerHTML =
-        table;
-
-}
-
-
-/* =========================================
-   HTML ESCAPE
-========================================= */
-
-function escapeHTML(value) {
-
-    if (
-        value === null ||
-        value === undefined
-    ) {
-
-        return "";
-
-    }
-
-
-    return String(value)
-
-        .replace(
-            /&/g,
-            "&amp;"
-        )
-
-        .replace(
-            /</g,
-            "&lt;"
-        )
-
-        .replace(
-            />/g,
-            "&gt;"
-        )
-
-        .replace(
-            /"/g,
-            "&quot;"
-        )
-
-        .replace(
-            /'/g,
-            "&#039;"
-        );
-
-}
-
-
-/* =========================================
-   ENTER KEY
-========================================= */
+// ==========================================
+// ENTER KEY
+// ==========================================
 
 questionInput.addEventListener(
     "keydown",
     function (event) {
-
-        /*
-            Enter = Run Query
-
-            Shift + Enter = New Line
-        */
 
         if (
             event.key === "Enter" &&
@@ -389,8 +258,35 @@ questionInput.addEventListener(
             event.preventDefault();
 
             runQuery();
-
         }
-
     }
 );
+
+
+// ==========================================
+// HOVER EFFECT
+// ==========================================
+
+const hoverCards =
+    document.querySelectorAll(".hover-card");
+
+
+hoverCards.forEach(function (card) {
+
+    card.addEventListener(
+        "mouseenter",
+        function () {
+
+            card.classList.add("hovered");
+        }
+    );
+
+
+    card.addEventListener(
+        "mouseleave",
+        function () {
+
+            card.classList.remove("hovered");
+        }
+    );
+});

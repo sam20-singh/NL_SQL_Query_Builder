@@ -2,129 +2,145 @@
 <html lang="en">
 
 <head>
-
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <meta
-        name="theme-color"
-        content="#02060f"
-    >
-
-    <title>NL SQL Query Builder</title>
+    <title>NL → SQL Query Builder</title>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
     <link
-        rel="preconnect"
-        href="https://fonts.gstatic.com"
-        crossorigin
-    >
-
-    <link
-        href="https://fonts.googleapis.com/css2?family=Sora:wght@100..900&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500&display=swap"
         rel="stylesheet"
     >
 
-    <link
-        rel="stylesheet"
-        href="style.css"
-    >
-
+    <link rel="stylesheet" href="style.css">
 </head>
-
 
 <body>
 
-
-    <!-- ==========================================
+    <!-- =========================================
          BACKGROUND VIDEO
-    =========================================== -->
+    ========================================== -->
 
-    <video
-        class="art"
-        autoplay
-        muted
-        loop
-        playsinline
-        preload="auto"
-        aria-hidden="true"
-        poster="https://d2ol7oe51mr4n9.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/130837c4-0244-4f37-9c61-8d801d93fd29.jpg"
-    >
+    <div class="background">
 
-        <source
-            src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260912_104303_0c6d60b2-9353-408e-9449-585108a22fb5.mp4"
-            type="video/mp4"
+        <video
+            id="backgroundVideo"
+            class="background-video"
+            autoplay
+            muted
+            loop
+            playsinline
+            preload="auto"
         >
+            <source
+                src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260328_083109_283f3553-e28f-428b-a723-d639c617eb2b.mp4"
+                type="video/mp4"
+            >
+        </video>
 
-    </video>
+        <div class="video-overlay"></div>
 
-
-    <!-- ==========================================
-         DARK OVERLAY
-    =========================================== -->
-
-    <div class="veil"></div>
-
-
-    <!-- ==========================================
-         MAIN APPLICATION
-    =========================================== -->
-
-    <main class="container">
+    </div>
 
 
-        <!-- HERO -->
+    <!-- =========================================
+         NAVIGATION
+    ========================================== -->
 
-        <header class="hero">
+    <nav class="navbar">
 
-            <div class="badge">
+        <div class="nav-inner">
+
+            <div class="logo">
+                NL<span>→</span>SQL<sup>®</sup>
+            </div>
+
+
+            <div class="nav-links">
+
+                <a href="#" class="active">
+                    Home
+                </a>
+
+                <a href="#">
+                    Studio
+                </a>
+
+                <a href="#">
+                    About
+                </a>
+
+                <a href="#">
+                    Journal
+                </a>
+
+                <a href="#">
+                    Reach Us
+                </a>
+
+            </div>
+
+
+            <button class="nav-button">
+                Begin Journey
+            </button>
+
+        </div>
+
+    </nav>
+
+
+    <!-- =========================================
+         MAIN PAGE
+    ========================================== -->
+
+    <main class="page">
+
+
+        <!-- =====================================
+             HERO
+        ====================================== -->
+
+        <section class="hero">
+
+            <div class="hero-badge">
                 AI DATABASE ASSISTANT
             </div>
 
 
             <h1>
-
                 Natural Language
-
-                <span>
-                    → SQL
-                </span>
-
+                <span>→ SQL</span>
             </h1>
 
 
-            <p>
+            <p class="hero-description">
                 Ask questions about your database in plain English.
                 Let AI generate and execute the SQL for you.
             </p>
 
-        </header>
+        </section>
 
 
+        <!-- =====================================
+             NATURAL LANGUAGE QUERY
+        ====================================== -->
 
-        <!-- ======================================
-             QUERY CARD
-        ======================================= -->
+        <section class="query-card hover-card">
 
-        <section class="query-card">
-
-
-            <div class="card-header">
-
+            <div class="query-header">
 
                 <div>
 
                     <h2>
-                        Ask your database
+                        Natural Language Query
                     </h2>
 
                     <p>
-                        Describe what you want to find.
+                        Tell the AI what data you want.
                     </p>
 
                 </div>
@@ -138,28 +154,21 @@
 
                 </div>
 
-
             </div>
 
 
-
-            <!-- INPUT -->
-
-            <div class="input-area">
-
+            <div class="input-wrapper">
 
                 <textarea
                     id="question"
-                    rows="4"
                     placeholder="Example: Show employees with salary greater than 50000"
+                    rows="5"
                 ></textarea>
-
 
 
                 <div class="input-footer">
 
-
-                    <span class="hint">
+                    <span>
                         Natural language supported
                     </span>
 
@@ -176,35 +185,31 @@
 
                     </button>
 
-
                 </div>
 
-
             </div>
-
 
         </section>
 
 
-
-        <!-- ======================================
-             OUTPUT
-        ======================================= -->
+        <!-- =====================================
+             OUTPUT GRID
+        ====================================== -->
 
         <section class="output-grid">
 
 
-            <!-- SQL -->
+            <!-- =================================
+                 GENERATED SQL
+            ================================== -->
 
-            <div class="output-card">
+            <div class="output-card hover-card">
 
+                <div class="output-header">
 
-                <div class="output-title">
-
-
-                    <span class="icon">
+                    <div class="output-icon">
                         ⌘
-                    </span>
+                    </div>
 
 
                     <div>
@@ -219,28 +224,25 @@
 
                     </div>
 
-
                 </div>
 
 
                 <pre id="sqlOutput">Your generated SQL will appear here...</pre>
 
-
             </div>
 
 
+            <!-- =================================
+                 QUERY RESULTS
+            ================================== -->
 
-            <!-- RESULTS -->
+            <div class="output-card hover-card">
 
-            <div class="output-card">
+                <div class="output-header">
 
-
-                <div class="output-title">
-
-
-                    <span class="icon">
+                    <div class="output-icon">
                         ▦
-                    </span>
+                    </div>
 
 
                     <div>
@@ -255,7 +257,6 @@
 
                     </div>
 
-
                 </div>
 
 
@@ -263,17 +264,14 @@
                     Your results will appear here...
                 </div>
 
-
             </div>
-
 
         </section>
 
 
-
-        <!-- ======================================
+        <!-- =====================================
              FOOTER
-        ======================================= -->
+        ====================================== -->
 
         <footer>
 
@@ -281,157 +279,17 @@
                 NL → SQL Query Builder
             </span>
 
+
             <span>
                 FastAPI · Qwen · SQLite
             </span>
 
         </footer>
 
-
     </main>
 
 
-
     <script src="script.js"></script>
-
-
-
-    <!-- ==========================================
-         VIDEO CONTROL
-    =========================================== -->
-
-    <script>
-
-        const video = document.querySelector(".art");
-
-
-        /*
-         * Make absolutely sure the video is muted.
-         * Muted video is required for autoplay.
-         */
-
-        video.muted = true;
-        video.volume = 0;
-
-
-        /*
-         * Start video
-         */
-
-        function startVideo() {
-
-            video.play()
-                .then(() => {
-
-                    console.log("Background video playing");
-
-                })
-                .catch((error) => {
-
-                    console.log(
-                        "Autoplay was blocked:",
-                        error
-                    );
-
-                });
-
-        }
-
-
-        /*
-         * Try immediately
-         */
-
-        startVideo();
-
-
-        /*
-         * Try when video becomes available
-         */
-
-        video.addEventListener(
-            "loadeddata",
-            startVideo
-        );
-
-
-        video.addEventListener(
-            "canplay",
-            startVideo
-        );
-
-
-        /*
-         * If browser blocks autoplay,
-         * start it after user interaction.
-         */
-
-        document.addEventListener(
-            "click",
-            startVideo,
-            {
-                once: true
-            }
-        );
-
-
-        document.addEventListener(
-            "mousemove",
-            startVideo,
-            {
-                once: true
-            }
-        );
-
-
-        document.addEventListener(
-            "touchstart",
-            startVideo,
-            {
-                once: true
-            }
-        );
-
-
-        /*
-         * Reduced motion
-         */
-
-        const motionQuery =
-            window.matchMedia(
-                "(prefers-reduced-motion: reduce)"
-            );
-
-
-        function checkMotion() {
-
-            if (motionQuery.matches) {
-
-                video.pause();
-
-            } else {
-
-                startVideo();
-
-            }
-
-        }
-
-
-        checkMotion();
-
-
-        if (motionQuery.addEventListener) {
-
-            motionQuery.addEventListener(
-                "change",
-                checkMotion
-            );
-
-        }
-
-    </script>
-
 
 </body>
 

@@ -2,9 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from groq import Groq
+from pathlib import Path
 import os
+import re
 import sqlite3
 
+
+# ==========================================
+# APPLICATION
+# ==========================================
 
 app = FastAPI()
 
@@ -16,7 +22,9 @@ app = FastAPI()
 api_key = os.environ.get("GROQ_API_KEY")
 
 if not api_key:
-    raise RuntimeError("GROQ_API_KEY environment variable is not set.")
+    raise RuntimeError(
+        "GROQ_API_KEY environment variable is not set."
+    )
 
 client = Groq(
     api_key=api_key
@@ -30,10 +38,19 @@ client = Groq(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+# ==========================================
+# DATABASE PATH
+# ==========================================
+
+BASE_DIR = Path(__file__).resolve().parent
+
+DATABASE_PATH = BASE_DIR / "database.db"
 
 
 # ==========================================
@@ -50,9 +67,186 @@ class QueryRequest(BaseModel):
 
 @app.get("/")
 def home():
+
     return {
         "message": "NL SQL Query Builder API is running"
     }
+
+
+# ==========================================
+# DATABASE CONNECTION
+# ==========================================
+
+def get_database_connection():
+
+    database_uri = (
+        f"file:{DATABASE_PATH}?mode=ro"
+    )
+
+    return sqlite3.connect(
+        database_uri,
+        uri=True
+    )
+
+
+# ==========================================
+# SQL AUTHORISER
+# ==========================================
+
+def sql_authorizer(
+    action,
+    arg1,
+    arg2,
+    database_name,
+    trigger_name
+):
+
+    blocked_actions = {
+
+        sqlite3.SQLITE_INSERT,
+        sqlite3.SQLITE_UPDATE,
+        sqlite3.SQLITE_DELETE,
+
+        sqlite3.SQLITE_CREATE_INDEX,
+        sqlite3.SQLITE_CREATE_TABLE,
+        sqlite3.SQLITE_CREATE_TEMP_INDEX,
+        sqlite3.SQLITE_CREATE_TEMP_TABLE,
+        sqlite3.SQLITE_CREATE_TEMP_TRIGGER,
+        sqlite3.SQLITE_CREATE_TEMP_VIEW,
+        sqlite3.SQLITE_CREATE_TRIGGER,
+        sqlite3.SQLITE_CREATE_VIEW,
+
+        sqlite3.SQLITE_DROP_INDEX,
+        sqlite3.SQLITE_DROP_TABLE,
+        sqlite3.SQLITE_DROP_TEMP_INDEX,
+        sqlite3.SQLITE_DROP_TEMP_TABLE,
+        sqlite3.SQLITE_DROP_TEMP_TRIGGER,
+        sqlite3.SQLITE_DROP_TEMP_VIEW,
+        sqlite3.SQLITE_DROP_TRIGGER,
+        sqlite3.SQLITE_DROP_VIEW,
+
+        sqlite3.SQLITE_ATTACH,
+        sqlite3.SQLITE_DETACH,
+
+        sqlite3.SQLITE_ALTER_TABLE,
+        sqlite3.SQLITE_REINDEX,
+        sqlite3.SQLITE_ANALYZE,
+        sqlite3.SQLITE_PRAGMA
+    }
+
+    if action in blocked_actions:
+
+        return sqlite3.SQLITE_DENY
+
+    return sqlite3.SQLITE_OK
+
+
+# ==========================================
+# EXTRACT SQL FROM AI RESPONSE
+# ==========================================
+
+def extract_sql(ai_response):
+
+    ai_response = ai_response.strip()
+
+
+    if "```sql" in ai_response:
+
+        sql = (
+            ai_response
+            .split("```sql", 1)[1]
+            .split("```", 1)[0]
+            .strip()
+        )
+
+    elif "```" in ai_response:
+
+        sql = (
+            ai_response
+            .split("```", 1)[1]
+            .split("```", 1)[0]
+            .strip()
+        )
+
+    else:
+
+        sql = ai_response
+
+
+    return sql.strip()
+
+
+# ==========================================
+# SQL VALIDATION
+# ==========================================
+
+def validate_sql(sql):
+
+    sql = sql.strip()
+
+
+    # ------------------------------------------
+    # CHECK EMPTY SQL
+    # ------------------------------------------
+
+    if not sql:
+
+        return (
+            "AI returned an empty SQL query."
+        )
+
+
+    # ------------------------------------------
+    # SELECT ONLY
+    # ------------------------------------------
+
+    if not re.match(
+        r"^SELECT\b",
+        sql,
+        re.IGNORECASE
+    ):
+
+        return (
+            "Only SELECT queries are allowed."
+        )
+
+
+    # ------------------------------------------
+    # BLOCK MULTIPLE STATEMENTS
+    # ------------------------------------------
+
+    if ";" in sql[:-1]:
+
+        return (
+            "Multiple SQL statements are not allowed."
+        )
+
+
+    # ------------------------------------------
+    # REMOVE TRAILING SEMICOLON
+    # ------------------------------------------
+
+    if sql.endswith(";"):
+
+        sql = sql[:-1].strip()
+
+
+    # ------------------------------------------
+    # BLOCK SQL COMMENTS
+    # ------------------------------------------
+
+    if (
+        "--" in sql
+        or "/*" in sql
+        or "*/" in sql
+    ):
+
+        return (
+            "SQL comments are not allowed."
+        )
+
+
+    return None
 
 
 # ==========================================
@@ -62,81 +256,96 @@ def home():
 @app.post("/query")
 def query(request: QueryRequest):
 
-    connection = sqlite3.connect("database.db")
-    cursor = connection.cursor()
+    connection = None
 
-
-    # ==========================================
-    # GET DATABASE TABLES
-    # ==========================================
-
-    cursor.execute("""
-        SELECT name
-        FROM sqlite_master
-        WHERE type='table'
-    """)
-
-    tables = cursor.fetchall()
-
-
-    # Store allowed table names
-    allowed_tables = []
-
-    for table in tables:
-        allowed_tables.append(table[0].upper())
-
-
-
-
-    # ==========================================
-    # BUILD DATABASE SCHEMA
-    # ==========================================
-
-    schema_parts = []
-
-    for table in tables:
-
-        table_name = table[0]
-
-        cursor.execute(
-            f"PRAGMA table_info({table_name})"
-        )
-
-        columns = cursor.fetchall()
-
-        column_names = []
-
-        for column in columns:
-            column_names.append(column[1])
-
-        table_schema = (
-            f"Table: {table_name}\n"
-            f"Columns: {', '.join(column_names)}"
-        )
-
-        schema_parts.append(table_schema)
-
-
-    schema = "\n\n".join(schema_parts)
-
-    
-
-
-    # ==========================================
-    # SEND QUESTION TO GROQ
-    # ==========================================
 
     try:
 
-        response = client.chat.completions.create(
+        # ==========================================
+        # CONNECT TO DATABASE
+        # ==========================================
 
-            model="openai/gpt-oss-20b",
+        connection = get_database_connection()
 
-            messages=[
-                {
-                    "role": "system",
+        cursor = connection.cursor()
 
-                    "content": f"""
+
+        # ==========================================
+        # GET DATABASE TABLES
+        # ==========================================
+
+        cursor.execute("""
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+            AND name NOT LIKE 'sqlite_%'
+        """)
+
+        tables = cursor.fetchall()
+
+
+        # ==========================================
+        # BUILD DATABASE SCHEMA
+        # ==========================================
+
+        schema_parts = []
+
+
+        for table in tables:
+
+            table_name = table[0]
+
+
+            cursor.execute(
+                f'PRAGMA table_info("{table_name}")'
+            )
+
+
+            columns = cursor.fetchall()
+
+
+            column_names = []
+
+
+            for column in columns:
+
+                column_names.append(
+                    column[1]
+                )
+
+
+            table_schema = (
+                f"Table: {table_name}\n"
+                f"Columns: {', '.join(column_names)}"
+            )
+
+
+            schema_parts.append(
+                table_schema
+            )
+
+
+        schema = "\n\n".join(
+            schema_parts
+        )
+
+
+        # ==========================================
+        # SEND QUESTION TO GROQ
+        # ==========================================
+
+        try:
+
+            response = client.chat.completions.create(
+
+                model="openai/gpt-oss-20b",
+
+                messages=[
+
+                    {
+                        "role": "system",
+
+                        "content": f"""
 You are a SQL assistant.
 
 Here is the actual database schema:
@@ -147,215 +356,147 @@ Convert the user's request into a SQL SELECT query.
 
 Rules:
 
-- Only generate SELECT queries.
-- You may use JOIN when the user's request requires data from multiple tables.
+- Generate only SELECT queries.
+- You may use JOIN when the request requires data from multiple tables.
 - Use only tables and columns that exist in the schema.
 - Do not create tables.
 - Do not modify the database.
+- Do not use INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, PRAGMA, ATTACH, or DETACH.
 - Return only the SQL query.
 """
-                },
+                    },
 
-                {
-                    "role": "user",
+                    {
+                        "role": "user",
 
-                    "content": request.question
-                }
-            ]
-        )
+                        "content": request.question
+                    }
 
-    except Exception as error:
-
-        connection.close()
+                ]
+            )
 
 
-        return {
-            "error": "AI service is unavailable."
-        }
-
-
-    # ==========================================
-    # GET GROQ RESPONSE
-    # ==========================================
-
-    ai_response = response.choices[0].message.content
-
-   
-
-
-    # ==========================================
-    # EXTRACT SQL
-    # ==========================================
-
-    if "```sql" in ai_response:
-
-        sql = (
-            ai_response
-            .split("```sql")[1]
-            .split("```")[0]
-            .strip()
-        )
-
-    elif "```" in ai_response:
-
-        sql = (
-            ai_response
-            .split("```")[1]
-            .strip()
-        )
-
-    else:
-
-        sql = ai_response.strip()
-
-
-   
-
-
-    # ==========================================
-    # SQL VALIDATION
-    # ==========================================
-
-    sql_upper = sql.upper().strip()
-
-
-    # ------------------------------------------
-    # 1. SELECT ONLY
-    # ------------------------------------------
-
-    if not sql_upper.startswith("SELECT"):
-
-        connection.close()
-
-        return {
-            "error": "Only SELECT queries are allowed."
-        }
-
-
-    # ------------------------------------------
-    # 2. BLOCK DANGEROUS SQL OPERATIONS
-    # ------------------------------------------
-
-    dangerous_keywords = [
-        "INSERT",
-        "UPDATE",
-        "DELETE",
-        "DROP",
-        "ALTER",
-        "CREATE",
-        "REPLACE",
-        "ATTACH",
-        "DETACH",
-        "PRAGMA"
-    ]
-
-
-    for keyword in dangerous_keywords:
-
-        if keyword in sql_upper:
-
-            connection.close()
+        except Exception:
 
             return {
-                "error": f"Blocked dangerous SQL operation: {keyword}"
+                "error": "AI service is unavailable."
             }
 
 
-    # ------------------------------------------
-    # 3. BLOCK MULTIPLE SQL STATEMENTS
-    # ------------------------------------------
+        # ==========================================
+        # GET AI RESPONSE
+        # ==========================================
 
-    if ";" in sql_upper[:-1]:
+        ai_response = (
+            response
+            .choices[0]
+            .message
+            .content
+        )
 
-        connection.close()
+
+        if not ai_response:
+
+            return {
+                "error": "AI returned an empty response."
+            }
+
+
+        # ==========================================
+        # EXTRACT SQL
+        # ==========================================
+
+        sql = extract_sql(
+            ai_response
+        )
+
+
+        # ==========================================
+        # VALIDATE SQL
+        # ==========================================
+
+        validation_error = validate_sql(
+            sql
+        )
+
+
+        if validation_error:
+
+            return {
+                "error": validation_error
+            }
+
+
+        # ==========================================
+        # ENABLE SQL AUTHORISER
+        # ==========================================
+
+        connection.set_authorizer(
+            sql_authorizer
+        )
+
+
+        # ==========================================
+        # EXECUTE SQL
+        # ==========================================
+
+        try:
+
+            cursor.execute(sql)
+
+            rows = cursor.fetchall()
+
+
+            # --------------------------------------
+            # GET COLUMN NAMES
+            # --------------------------------------
+
+            columns = []
+
+
+            if cursor.description:
+
+                for column in cursor.description:
+
+                    columns.append(
+                        column[0]
+                    )
+
+
+        except sqlite3.Error as error:
+
+            return {
+                "error": (
+                    f"SQL execution failed: {error}"
+                )
+            }
+
+
+        # ==========================================
+        # RETURN RESULTS
+        # ==========================================
 
         return {
-            "error": "Multiple SQL statements are not allowed."
+
+            "sql": sql,
+
+            "columns": columns,
+
+            "results": rows
         }
 
 
-    # ------------------------------------------
-    # 4. BLOCK SQL COMMENTS
-    # ------------------------------------------
-
-    if (
-        "--" in sql_upper
-        or "/*" in sql_upper
-        or "*/" in sql_upper
-    ):
-
-        connection.close()
+    except Exception:
 
         return {
-            "error": "SQL comments are not allowed."
+            "error": (
+                "An unexpected server error occurred."
+            )
         }
 
 
-    # ------------------------------------------
-    # 5. CHECK THAT A KNOWN TABLE IS USED
-    # ------------------------------------------
+    finally:
 
-    table_found = False
+        if connection:
 
-    for table in allowed_tables:
-
-        if f"FROM {table}" in sql_upper:
-
-            table_found = True
-
-            break
-
-
-    if not table_found:
-
-        connection.close()
-
-        return {
-            "error": "SQL query uses an unknown table."
-        }
-
-
-    # ==========================================
-    # EXECUTE SQL
-    # ==========================================
-
-    try:
-
-        cursor.execute(sql)
-
-        rows = cursor.fetchall()
-
-
-        # Get actual column names
-        columns = []
-
-        for column in cursor.description:
-
-            columns.append(column[0])
-
-
-    except Exception as error:
-
-        connection.close()
-
-        return {
-            "error": str(error)
-        }
-
-
-    # ==========================================
-    # CLOSE DATABASE
-    # ==========================================
-
-    connection.close()
-
-
-    # ==========================================
-    # RETURN RESULT TO FRONTEND
-    # ==========================================
-
-    return {
-        "sql": sql,
-        "columns": columns,
-        "results": rows
-    }
+            connection.close()
